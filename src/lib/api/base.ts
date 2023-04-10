@@ -6,7 +6,7 @@ export interface Options {
 }
 
 export default abstract class Base {
-  request(method: string, path: string, options: Options = {}) {
+  async request(method: string, path: string, options: Options = {}) {
     let url = `${this.getBaseURL()}${path}`;
 
     const requestInit: RequestInit = {
@@ -28,8 +28,19 @@ export default abstract class Base {
       url = `${url}?${queryString}`;
     }
 
-    return fetch(url, requestInit)
-      .then(response => response.json());
+    try {
+      const response = await fetch(url, requestInit);
+
+      if (!response.ok) {
+        throw response;
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Request error:', error);
+      throw error;
+    }
   }
 
   abstract getBaseURL(): string;
