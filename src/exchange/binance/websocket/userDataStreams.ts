@@ -18,8 +18,8 @@ export default class UserDataStreams extends WebSocketBase {
     this.binanceSpotClient = binanceSpotClient;
     this.isTestnet = isTestnet;
 
-    process.on('SIGINT', () => this.unsubscribe);
-    process.on('SIGTERM', () => this.unsubscribe);
+    process.on('SIGINT', () => this.unsubscribe());
+    process.on('SIGTERM', () => this.unsubscribe());
   }
 
   public getBaseURL(): string {
@@ -40,9 +40,11 @@ export default class UserDataStreams extends WebSocketBase {
 
     if (this.listenKeyRenewInterval) {
       clearInterval(this.listenKeyRenewInterval);
+
+      this.listenKeyRenewInterval = undefined;
     }
 
-    if (this.ws) this.close();
+    this.disconnect();
   }
 
   private scheduleAutoRenewListenKey() {

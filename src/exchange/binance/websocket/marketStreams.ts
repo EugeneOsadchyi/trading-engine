@@ -34,6 +34,7 @@ export default class MarketStreams extends WebSocketBase {
 
     this.websocketMessageIdToSubscription.set(this.websocketId, payload);
 
+    console.log('Subscribing to', path, 'with payload', payload);
     this.sendMessage(payload);
   }
 
@@ -46,6 +47,10 @@ export default class MarketStreams extends WebSocketBase {
     this.websocketMessageIdToSubscription.set(this.websocketId, payload);
 
     this.sendMessage(payload);
+
+    if (this.subscriptions.size === 0) {
+      this.disconnect();
+    }
   }
 
   public listSubscriptions() {

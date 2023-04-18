@@ -24,6 +24,10 @@ export default abstract class WebSocketBase extends EventEmitter {
     process.on('SIGTERM', () => this.close());
   }
 
+  protected disconnect() {
+    this.close();
+  }
+
   public close() {
     if (!this.ws) return;
 

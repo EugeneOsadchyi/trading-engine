@@ -1,5 +1,5 @@
 import Base from "../base";
-import { AllOrdersParams, CancelOrderParams, OrderParams, ReplaceOrderParams } from '../types';
+import { AllOrdersParams, CancelOrderParams, OrderParams, ReplaceOrderParams, OpenOrder } from '../types';
 
 export default class Wallet extends Base {
   public getAccountInfo() {
@@ -30,7 +30,7 @@ export default class Wallet extends Base {
     return this.signedRequest('POST', '/api/v3/order/cancelReplace', params);
   }
 
-  public getOpenOrders(params: { symbol?: string } = {}) {
+  public getOpenOrders(params: { symbol?: string } = {}): Promise<OpenOrder[]> {
     return this.signedRequest('GET', '/api/v3/openOrders', params);
   }
 

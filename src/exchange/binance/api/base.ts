@@ -30,7 +30,6 @@ export default class BinanceBase extends Base {
     const timestamp = Date.now();
 
     const queryString = buildQueryString({ ...params, timestamp })
-    console.log(queryString);
 
     const signature = createHmac('sha256', this.secretKey)
       .update(queryString)
