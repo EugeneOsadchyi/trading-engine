@@ -28,14 +28,17 @@ export default abstract class Base {
       url = `${url}?${queryString}`;
     }
 
+    console.log('Requesting', url, 'with options', options);
+
     try {
       const response = await fetch(url, requestInit);
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw response;
+        throw data;
       }
 
-      const data = await response.json();
       return data;
     } catch (error) {
       console.error('Request error:', error);

@@ -3,6 +3,7 @@ import { OpenOrder } from '../exchange/binance/api/types';
 import BinanceWebsocketMarketStreams from '../exchange/binance/websocket/marketStreams';
 import { AccountUpdateEvent, BalanceUpdateEvent, BookTickerUpdateEvent, OrderUpdateEvent } from '../exchange/binance/websocket/types';
 import BinanceWebsocketUserDataStreams from '../exchange/binance/websocket/userDataStreams';
+import { Mutex } from 'async-mutex';
 
 const MIN_BASE_ASSET_QUANTITY = 11;
 const MIN_QUOTE_ASSET_QUANTITY = 10;
@@ -14,10 +15,8 @@ const SELL = 'SELL';
 export default class StablecoinBot {
   baseAsset: string;
   baseAssetQuantity: number = 0;
-  baseAssetPrecision?: number;
   quoteAsset: string;
   quoteAssetQuantity: number = 0;
-  quoteAssetPrecision?: number;
 
   spotClient: BinanceSpot;
 
@@ -32,6 +31,8 @@ export default class StablecoinBot {
   buyPriceLimit: number;
   sellUsingLastBuyPrice: boolean = false;
   lastBuyPrice?: number;
+
+  marketStreamMutex = new Mutex();
 
 
   constructor(baseAsset: string, quoteAsset: string, buyPriceLimit: number, spotClient: BinanceSpot) {
@@ -81,9 +82,6 @@ export default class StablecoinBot {
       throw new Error(`Symbol ${this.getSymbol()} not found`);
     }
 
-    this.baseAssetPrecision = symbolInfo.baseAssetPrecision;
-    this.quoteAssetPrecision = symbolInfo.quoteAssetPrecision;
-
     this.isQuoteOrderQtyMarketAllowed = symbolInfo.quoteOrderQtyMarketAllowed;
   }
 
@@ -116,49 +114,53 @@ export default class StablecoinBot {
   }
 
   private handleMarketStreamMessage = async (msg: BookTickerUpdateEvent) => {
-    console.log('handleMarketStreamMessage', msg);
-
     if (msg.s !== this.getSymbol()) {
       console.log('Ignoring message for symbol', msg.s);
       return;
     }
 
-    const { askPrice, askQuantity, bidPrice, bidQuantity } = this.normalizeBookTickerUpdateEvent(msg);
+    const release = await this.marketStreamMutex.acquire();
 
-    if (this.quoteAssetQuantity > MIN_QUOTE_ASSET_QUANTITY) {
-      const buyPrice = this.calculateBuyPrice({ askPrice, askQuantity, bidPrice, bidQuantity });
+    try {
+      const { askPrice, askQuantity, bidPrice, bidQuantity } = this.normalizeBookTickerUpdateEvent(msg);
 
-      if (this.buyOrder && +this.buyOrder.price === buyPrice) {
-        return;
+      if (this.quoteAssetQuantity > MIN_QUOTE_ASSET_QUANTITY) {
+        const buyPrice = this.calculateBuyPrice({ askPrice, askQuantity, bidPrice, bidQuantity });
+
+        if (this.buyOrder && +this.buyOrder.price === buyPrice) {
+          return;
+        }
+
+        if (this.buyOrder) {
+          console.log('Cancelling buy order', this.buyOrder);
+          await this.cancelOrder(this.buyOrder);
+        }
+
+        console.log('buyPrice', buyPrice);
+
+        this.buyOrder = await this.buy(buyPrice);
+        console.log('buyOrder', this.buyOrder);
       }
 
-      if (this.buyOrder) {
-        console.log('Cancelling buy order', this.buyOrder);
-        await this.cancelOrder(this.buyOrder);
+      if (this.baseAssetQuantity > MIN_BASE_ASSET_QUANTITY) {
+        const sellPrice = this.calculateSellPrice({ askPrice, askQuantity, bidPrice, bidQuantity });
+
+        if (this.sellOrder && +this.sellOrder?.price === sellPrice) {
+          return;
+        }
+
+        if (this.sellOrder) {
+          console.log('Cancelling sell order', this.sellOrder);
+          await this.cancelOrder(this.sellOrder);
+        }
+
+        console.log('sellPrice', sellPrice);
+
+        this.sellOrder = await this.sell(sellPrice);
+        console.log('sellOrder', this.sellOrder);
       }
-
-      console.log('buyPrice', buyPrice);
-
-      this.buyOrder = await this.buy(buyPrice);
-      console.log('buyOrder', this.buyOrder);
-    }
-
-    if (this.baseAssetQuantity > MIN_BASE_ASSET_QUANTITY) {
-      const sellPrice = this.calculateSellPrice({ askPrice, askQuantity, bidPrice, bidQuantity });
-
-      if (this.sellOrder && +this.sellOrder?.price === sellPrice) {
-        return;
-      }
-
-      if (this.sellOrder) {
-        console.log('Cancelling sell order', this.sellOrder);
-        await this.cancelOrder(this.sellOrder);
-      }
-
-      console.log('sellPrice', sellPrice);
-
-      this.sellOrder = await this.sell(sellPrice);
-      console.log('sellOrder', this.sellOrder);
+    } finally {
+      release();
     }
   }
 
@@ -191,13 +193,16 @@ export default class StablecoinBot {
   }
 
   buy(price: number): Promise<OpenOrder> {
+    const quantity = this.calculateBuyQuantity(price);
+
     return this.spotClient.trade.newOrder({
       symbol: this.getSymbol(),
       side: BUY,
       type: "LIMIT",
-      quoteOrderQty: this.quoteAssetQuantity,
+      quantity: Math.floor(quantity).toString(),
       price: this.round(price, 4),
       newOrderRespType: "FULL",
+      timeInForce: "GTC",
     });
   }
 
@@ -230,10 +235,16 @@ export default class StablecoinBot {
       symbol: this.getSymbol(),
       side: SELL,
       type: "LIMIT",
-      quantity: this.baseAssetQuantity,
+      quantity: Math.floor(this.baseAssetQuantity).toString(),
       price: this.round(price, 4),
       newOrderRespType: "FULL",
+      timeInForce: "GTC",
     });
+  }
+
+  private calculateBuyQuantity(price: number): number {
+    const quantity = this.quoteAssetQuantity / price;
+    return quantity;
   }
 
   private async cancelOrder(order?: OpenOrder) {

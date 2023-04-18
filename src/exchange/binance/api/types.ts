@@ -11,8 +11,8 @@ export interface OrderParams {
   symbol: string;
   side: Side;
   type: OrderType;
-  timeInForce?: TimeInForce;
-  quantity?: number;
+  timeInForce: TimeInForce;
+  quantity?: string;
   quoteOrderQty?: number;
   price?: string;
   newClientOrderId?: string;
